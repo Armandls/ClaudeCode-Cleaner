@@ -4,4 +4,4 @@
 # ...except these files
 !.gitignore
 !CLAUDE.md
-!clean-sessions.sh
+!cleaner.sh
