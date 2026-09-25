@@ -1,30 +1,35 @@
 #!/usr/bin/env bash
 
-#Vars declaration
-claude_path_bin=$(which claude)
-script_dir=$(dirname "$(realpath "$0")")
-claude_dirs_file="$script_dir/claude_directories"
-PS3="Which directory do you want to clean? "
-
 #Starting point
 echo  -e "\nPRINTAR ALGUN MENSAJE CHULO EN ALGUN COLOR CHULO DE INFORMACION/BIENVENIDA...\n\n"
 
 #Check the binary claude path
+claude_path_bin=$(which claude)
+
 if [[ -e $claude_path_bin ]]; then
 	echo -e "$claude_path_bin\n"
 else 
-	echo "ERROR: There are not claude isntalled in the system"
-	exit
+	echo "ERROR: There are not claude isntalled in the system" >&2
+	exit 1
 fi
 
-#Check if there are any .claude directory in $HOME
-find / -name .claude > "$claude_dirs_file" 2>/dev/null
+#Check is there is $CLAUDE_CONFIG_DIR declared as a env variable
+claude_dir="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 
-if [[ -s claude_directories ]]; then 
-	echo -e "There are this .claude directories in the system:"
-	
-	# Print .claude directories path
-	mapfile -t dirs < "$claude_dirs_file"
+if [[ ! -d "$claude_dir/projects" ]]; then
+	echo "ERROR: $claude_dir/projects does not exist" >&2
+	exit 1
+fi
+
+echo -e "Claude directory: $claude_dir\n"
+
+#List the project directories inside $claude_dir/projects
+mapfile -t dirs < <(find "$claude_dir/projects" -mindepth 1 -maxdepth 1 -type d)
+
+if (( ${#dirs[@]} > 0 )); then
+	echo -e "There are this project directories in $claude_dir/projects:"
+
+	PS3="Which directory do you want to clean? "
 	select dir in "${dirs[@]}"; do
    		echo -e "You chose: $dir"
     		break
@@ -35,10 +40,10 @@ if [[ -s claude_directories ]]; then
 	
 	
 
-else 
-	echo -e "There are no .claude directories in you system"
+else
+	echo -e "There are no project directories in $claude_dir/projects"
 fi
 
-exit
+exit 0
 
 
