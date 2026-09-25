@@ -75,204 +75,246 @@ if [[ $dry_run == true ]]; then
 	echo "  ${yellow}${bold}DRY-RUN:${reset} ${yellow}nothing will be deleted${reset}"
 fi
 
-#List the project directories inside $claude_dir/projects
-mapfile -t dirs < <(find "$claude_dir/projects" -mindepth 1 -maxdepth 1 -type d | sort)
-
-if (( ${#dirs[@]} == 0 )); then
-	echo
-	echo "There are no projects in $claude_dir/projects"
-	exit 0
-fi
-
-# Keep only the project name (the part after the last /)
-names=()
-for dir in "${dirs[@]}"; do
-	names+=("${dir##*/}")
-done
-
-echo
-echo "${bold}Projects${reset}"
-
-PS3=$'\n'"${bold}Choose a project:${reset} "
-select name in "${names[@]}" "Quit"; do
-	if [[ $name == "Quit" ]]; then
-		echo "Bye!"
-		exit 0
-	elif [[ -z $name ]]; then
-		echo "${yellow}Invalid option: $REPLY${reset}" >&2
-		continue
-	fi
-
-	# $REPLY is the number typed, arrays start at 0
-	project_dir="${dirs[REPLY - 1]}"
-	break
-done
-
-# select also ends with Ctrl+D (end of input) without choosing anything
-if [[ -z $project_dir ]]; then
-	echo
-	exit 0
-fi
-
-#List the sessions of the chosen project (one .jsonl file per session)
+# Globs that match nothing expand to nothing (instead of the pattern itself)
 shopt -s nullglob
-session_files=("$project_dir"/*.jsonl)
-
-if (( ${#session_files[@]} == 0 )); then
-	echo
-	echo "There are no sessions in ${bold}$name${reset}"
-	exit 0
-fi
-
-# Files of the sessions that are running right now
-active_files=("$claude_dir"/sessions/*.json)
 
 # Return success (0) if the session ID in $1 is running right now
 is_active() {
+	local active_files=("$claude_dir"/sessions/*.json)
 	(( ${#active_files[@]} > 0 )) && grep -q "\"sessionId\":\"$1\"" "${active_files[@]}"
 }
 
-session_ids=()
-labels=()
-for file in "${session_files[@]}"; do
-	# The session ID is the file name without the .jsonl extension
-	id="${file##*/}"
-	id="${id%.jsonl}"
+#Show the projects menu and save the choice in $project_dir and $project_name
+# Returns 1 when the user wants to quit
+choose_project() {
+	local all_dirs dirs names labels dir sessions count label
+	# Show the menu in one column (select uses $COLUMNS to decide)
+	local COLUMNS=1
 
-	modified=$(date -r "$file" '+%Y-%m-%d %H:%M')
-	size=$(du -h "$file" | cut -f1)
+	mapfile -t all_dirs < <(find "$claude_dir/projects" -mindepth 1 -maxdepth 1 -type d | sort)
 
-	title=""
-	if [[ -f "$project_dir/$id/custom-title.json" ]]; then
-		title=$(grep -o '"customTitle":"[^"]*"' "$project_dir/$id/custom-title.json" | cut -d'"' -f4)
+	# Keep only the projects that still have sessions: a project directory
+	# stays after deleting all its sessions because memory/ is never deleted
+	dirs=()
+	names=()
+	labels=()
+	for dir in "${all_dirs[@]}"; do
+		sessions=("$dir"/*.jsonl)
+		if (( ${#sessions[@]} == 0 )); then
+			continue
+		fi
+
+		dirs+=("$dir")
+		# Keep only the project name (the part after the last /)
+		names+=("${dir##*/}")
+		if (( ${#sessions[@]} == 1 )); then
+			count="1 session"
+		else
+			count="${#sessions[@]} sessions"
+		fi
+		printf -v label '%-45s %s' "${dir##*/}" "${dim}$count${reset}"
+		labels+=("$label")
+	done
+
+	if (( ${#dirs[@]} == 0 )); then
+		echo
+		echo "There are no sessions in $claude_dir/projects"
+		return 1
 	fi
-	if [[ -z $title ]]; then
-		title="${dim}(no title)${reset}"
+
+	echo
+	echo "${bold}Projects${reset}"
+
+	project_dir=""
+	PS3=$'\n'"${bold}Choose a project:${reset} "
+	select label in "${labels[@]}" "Quit"; do
+		if [[ $label == "Quit" ]]; then
+			return 1
+		elif [[ -z $label ]]; then
+			echo "${yellow}Invalid option: $REPLY${reset}" >&2
+			continue
+		fi
+
+		# $REPLY is the number typed, arrays start at 0
+		project_dir="${dirs[REPLY - 1]}"
+		project_name="${names[REPLY - 1]}"
+		break
+	done
+
+	# select also ends with Ctrl+D (end of input) without choosing anything
+	[[ -n $project_dir ]]
+}
+
+#Show the sessions menu of $project_dir and save the choice in $session_id
+# Returns 1 when the user wants to go back to the projects menu
+choose_session() {
+	local session_files session_ids labels file id modified size title label
+	local COLUMNS=1
+
+	# One .jsonl file per session
+	session_files=("$project_dir"/*.jsonl)
+
+	if (( ${#session_files[@]} == 0 )); then
+		echo
+		echo "There are no sessions in ${bold}$project_name${reset}"
+		return 1
 	fi
 
-	if is_active "$id"; then
-		title+=" ${green}(active)${reset}"
+	session_ids=()
+	labels=()
+	for file in "${session_files[@]}"; do
+		# The session ID is the file name without the .jsonl extension
+		id="${file##*/}"
+		id="${id%.jsonl}"
+
+		modified=$(date -r "$file" '+%Y-%m-%d %H:%M')
+		size=$(du -h "$file" | cut -f1)
+
+		title=""
+		if [[ -f "$project_dir/$id/custom-title.json" ]]; then
+			title=$(grep -o '"customTitle":"[^"]*"' "$project_dir/$id/custom-title.json" | cut -d'"' -f4)
+		fi
+		if [[ -z $title ]]; then
+			title="${dim}(no title)${reset}"
+		fi
+
+		if is_active "$id"; then
+			title+=" ${green}(active)${reset}"
+		fi
+
+		session_ids+=("$id")
+		printf -v label '%s  %5s  %s  %s' "$modified" "$size" "${dim}${id:0:8}${reset}" "$title"
+		labels+=("$label")
+	done
+
+	echo
+	echo "${bold}Sessions of $project_name${reset}"
+
+	session_id=""
+	PS3=$'\n'"${bold}Choose a session:${reset} "
+	select label in "${labels[@]}" "Back" "Quit"; do
+		if [[ $label == "Back" ]]; then
+			return 1
+		elif [[ $label == "Quit" ]]; then
+			echo "Bye!"
+			exit 0
+		elif [[ -z $label ]]; then
+			echo "${yellow}Invalid option: $REPLY${reset}" >&2
+			continue
+		fi
+
+		session_id="${session_ids[REPLY - 1]}"
+		break
+	done
+
+	[[ -n $session_id ]]
+}
+
+#Show every path of $session_id, ask for confirmation and delete them
+delete_session() {
+	local uuid_regex candidates to_delete path size total answer
+
+	#Safety check 1: the session ID must be a real UUID (8-4-4-4-12 hex characters)
+	uuid_regex='^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+
+	if [[ ! $session_id =~ $uuid_regex ]]; then
+		echo
+		error "'$session_id' is not a valid session ID"
+		return
 	fi
 
-	session_ids+=("$id")
-	printf -v label '%s  %5s  %s  %s' "$modified" "$size" "${dim}${id:0:8}${reset}" "$title"
-	labels+=("$label")
+	#Safety check 2: never delete a session that is running right now
+	if is_active "$session_id"; then
+		echo
+		error "Session $session_id is running right now. Close it before deleting it."
+		return
+	fi
+
+	#Collect every path that belongs to the chosen session
+	# The globs (*) only expand to files that exist, thanks to nullglob
+	candidates=(
+		"$project_dir/$session_id.jsonl"
+		"$project_dir/$session_id"
+		"$project_dir/$session_id".jsonl.superseded-*
+		"$project_dir/$session_id".orphaned-*.jsonl
+		"$claude_dir/file-history/$session_id"
+		"$claude_dir/session-env/$session_id"
+		"$claude_dir/debug/$session_id"*
+		"$claude_dir/image-cache/$session_id"
+		"$claude_dir/uploads/$session_id"
+		"$claude_dir/tasks/$session_id"
+	)
+
+	# Keep only the paths that really exist
+	to_delete=()
+	for path in "${candidates[@]}"; do
+		if [[ -e $path ]]; then
+			to_delete+=("$path")
+		fi
+	done
+
+	if (( ${#to_delete[@]} == 0 )); then
+		echo
+		echo "There is nothing to delete for session $session_id"
+		return
+	fi
+
+	#Safety check 3: every path must be inside $claude_dir, belong to this session
+	# and never be a memory directory. This should never happen, so stop everything
+	for path in "${to_delete[@]}"; do
+		if [[ $path != "$claude_dir/"* || $path != *"$session_id"* || $path == */memory* ]]; then
+			error "Refusing to delete unexpected path: $path"
+			exit 1
+		fi
+	done
+
+	echo
+	echo "${bold}Files of session ${cyan}$session_id${reset}"
+	echo
+
+	for path in "${to_delete[@]}"; do
+		size=$(du -sh "$path" | cut -f1)
+		# Show the path relative to $claude_dir so it is shorter
+		printf '  %6s  %s\n' "$size" "${path#"$claude_dir"/}"
+	done
+
+	total=$(du -shc "${to_delete[@]}" | tail -n 1 | cut -f1)
+	echo
+	echo "  ${bold}Total:${reset} $total in ${#to_delete[@]} paths"
+
+	#In dry-run mode stop here, before asking anything
+	if [[ $dry_run == true ]]; then
+		echo
+		echo "${yellow}DRY-RUN: nothing was deleted${reset}"
+		return
+	fi
+
+	#Ask for confirmation (anything but y/Y, or Ctrl+D, means no)
+	echo
+	read -rp "${bold}Delete these ${#to_delete[@]} paths? [y/N]${reset} " answer || answer=""
+
+	if [[ $answer != [yY] ]]; then
+		echo "Nothing was deleted"
+		return
+	fi
+
+	#Remove the selected session
+	# -- marks the end of the options, so no path is read as an option of rm
+	if rm -rf -- "${to_delete[@]}"; then
+		echo
+		echo "${green}${bold}Session $session_id deleted${reset} ${dim}($total freed)${reset}"
+	else
+		error "Some paths could not be deleted"
+	fi
+}
+
+#Main loop: projects menu -> sessions menu -> delete, and back to the sessions menu
+while choose_project; do
+	while choose_session; do
+		delete_session
+	done
 done
 
 echo
-echo "${bold}Sessions of $name${reset}"
-
-PS3=$'\n'"${bold}Choose a session:${reset} "
-select label in "${labels[@]}" "Quit"; do
-	if [[ $label == "Quit" ]]; then
-		echo "Bye!"
-		exit 0
-	elif [[ -z $label ]]; then
-		echo "${yellow}Invalid option: $REPLY${reset}" >&2
-		continue
-	fi
-
-	session_id="${session_ids[REPLY - 1]}"
-	break
-done
-
-if [[ -z $session_id ]]; then
-	echo
-	exit 0
-fi
-
-#Safety check 1: the session ID must be a real UUID (8-4-4-4-12 hex characters)
-uuid_regex='^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
-
-if [[ ! $session_id =~ $uuid_regex ]]; then
-	echo
-	error "'$session_id' is not a valid session ID"
-	exit 1
-fi
-
-#Safety check 2: never delete a session that is running right now
-if is_active "$session_id"; then
-	echo
-	error "Session $session_id is running right now. Close it before deleting it."
-	exit 1
-fi
-
-#Collect every path that belongs to the chosen session
-# The globs (*) only expand to files that exist, thanks to nullglob
-candidates=(
-	"$project_dir/$session_id.jsonl"
-	"$project_dir/$session_id"
-	"$project_dir/$session_id".jsonl.superseded-*
-	"$project_dir/$session_id".orphaned-*.jsonl
-	"$claude_dir/file-history/$session_id"
-	"$claude_dir/session-env/$session_id"
-	"$claude_dir/debug/$session_id"*
-	"$claude_dir/image-cache/$session_id"
-	"$claude_dir/uploads/$session_id"
-	"$claude_dir/tasks/$session_id"
-)
-
-# Keep only the paths that really exist
-to_delete=()
-for path in "${candidates[@]}"; do
-	if [[ -e $path ]]; then
-		to_delete+=("$path")
-	fi
-done
-
-if (( ${#to_delete[@]} == 0 )); then
-	echo
-	echo "There is nothing to delete for session $session_id"
-	exit 0
-fi
-
-#Safety check 3: every path must be inside $claude_dir, belong to this session
-# and never be a memory directory
-for path in "${to_delete[@]}"; do
-	if [[ $path != "$claude_dir/"* || $path != *"$session_id"* || $path == */memory* ]]; then
-		error "Refusing to delete unexpected path: $path"
-		exit 1
-	fi
-done
-
-echo
-echo "${bold}Files of session ${cyan}$session_id${reset}"
-echo
-
-for path in "${to_delete[@]}"; do
-	size=$(du -sh "$path" | cut -f1)
-	# Show the path relative to $claude_dir so it is shorter
-	printf '  %6s  %s\n' "$size" "${path#"$claude_dir"/}"
-done
-
-total=$(du -shc "${to_delete[@]}" | tail -n 1 | cut -f1)
-echo
-echo "  ${bold}Total:${reset} $total in ${#to_delete[@]} paths"
-
-#In dry-run mode stop here, before asking anything
-if [[ $dry_run == true ]]; then
-	echo
-	echo "${yellow}DRY-RUN: nothing was deleted${reset}"
-	exit 0
-fi
-
-#Ask for confirmation (anything but y/Y, or Ctrl+D, means no)
-echo
-read -rp "${bold}Delete these ${#to_delete[@]} paths? [y/N]${reset} " answer || answer=""
-
-if [[ $answer != [yY] ]]; then
-	echo "Nothing was deleted"
-	exit 0
-fi
-
-#Remove the selected session
-# -- marks the end of the options, so no path is read as an option of rm
-if rm -rf -- "${to_delete[@]}"; then
-	echo
-	echo "${green}${bold}Session $session_id deleted${reset} ${dim}($total freed)${reset}"
-else
-	error "Some paths could not be deleted"
-	exit 1
-fi
-
+echo "Bye!"
 exit 0
