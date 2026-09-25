@@ -3,6 +3,5 @@
 
 # ...except these files
 !.gitignore
-!CLAUDE.md
 !cleaner.sh
 
