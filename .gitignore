@@ -6,3 +6,7 @@
 !ccleaner.sh
 !README.md
 !LICENSE
+!demo/
+!demo/demo.tape
+!demo/setup.sh
+!demo/demo.gif

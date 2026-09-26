@@ -6,6 +6,11 @@ together with all the data Claude Code keeps for each one.
 Claude Code already removes sessions older than `cleanupPeriodDays` (30 days by
 default). This script is for deleting a specific session **now**, chosen by hand.
 
+![Choosing a project and a session, reviewing its files and deleting it](demo/demo.gif)
+
+The demo uses fake data. To record it again: `vhs demo/demo.tape`
+(needs [VHS](https://github.com/charmbracelet/vhs)).
+
 ## Requirements
 
 - Bash 4 or newer
