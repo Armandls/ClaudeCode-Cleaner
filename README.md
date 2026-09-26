@@ -17,15 +17,15 @@ default). This script is for deleting a specific session **now**, chosen by hand
 ```bash
 git clone https://github.com/Armandls/ClaudeCode-Cleaner.git
 cd ClaudeCode-Cleaner
-chmod +x cleaner.sh
+chmod +x ccleaner.sh
 ```
 
 ## Usage
 
 ```bash
-./cleaner.sh            # choose a session and delete it
-./cleaner.sh --dry-run  # show what would be deleted, delete nothing
-./cleaner.sh --help     # show the help
+./ccleaner.sh            # choose a session and delete it
+./ccleaner.sh --dry-run  # show what would be deleted, delete nothing
+./ccleaner.sh --help     # show the help
 ```
 
 1. Choose a project. Only projects that still have sessions are listed.
@@ -76,5 +76,5 @@ This also makes it easy to try the script on a copy of your data:
 ```bash
 mkdir -p /tmp/claude-test
 cp -r ~/.claude/{projects,file-history,session-env,sessions} /tmp/claude-test/
-CLAUDE_CONFIG_DIR=/tmp/claude-test ./cleaner.sh
+CLAUDE_CONFIG_DIR=/tmp/claude-test ./ccleaner.sh
 ```

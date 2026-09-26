@@ -3,6 +3,6 @@
 
 # ...except these files
 !.gitignore
-!cleaner.sh
+!ccleaner.sh
 !README.md
 
