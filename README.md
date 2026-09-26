@@ -90,3 +90,7 @@ mkdir -p /tmp/claude-test
 cp -r ~/.claude/{projects,file-history,session-env,sessions} /tmp/claude-test/
 CLAUDE_CONFIG_DIR=/tmp/claude-test ./ccleaner.sh
 ```
+
+## License
+
+[MIT](LICENSE)
