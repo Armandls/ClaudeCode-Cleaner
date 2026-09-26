@@ -178,6 +178,11 @@ choose_project() {
 choose_session() {
 	local session_files session_ids labels file id modified size title label
 
+	# The project directory is gone after deleting its last session
+	if [[ ! -d $project_dir ]]; then
+		return 1
+	fi
+
 	# One .jsonl file per session, newest first: find prints "<modification time> <path>",
 	# sort orders by that number and cut removes it again
 	mapfile -t session_files < <(
@@ -245,7 +250,8 @@ choose_session() {
 
 #Show every path of $session_id, ask for confirmation and delete them
 delete_session() {
-	local uuid_regex candidates to_delete path size total answer
+	local uuid_regex candidates to_delete path size total answer remaining
+	local delete_project=false
 
 	#Safety check 1: the session ID must be a real UUID (8-4-4-4-12 hex characters)
 	uuid_regex='^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
@@ -301,6 +307,26 @@ delete_session() {
 		fi
 	done
 
+	#If this is the last session of the project, delete the whole project directory
+	# (memory/ and any other file inside it) instead of its session paths
+	remaining=("$project_dir"/*.jsonl)
+	if (( ${#remaining[@]} == 1 )) && [[ ${remaining[0]} == "$project_dir/$session_id.jsonl" ]]; then
+		# The project directory must be exactly $claude_dir/projects/<name>
+		if [[ -z $project_name || $project_name == */* || $project_dir != "$claude_dir/projects/$project_name" ]]; then
+			error "Refusing to delete unexpected project directory: $project_dir"
+			exit 1
+		fi
+
+		delete_project=true
+		# Keep the paths outside the project and add the project directory itself
+		for path in "${!to_delete[@]}"; do
+			if [[ ${to_delete[path]} == "$project_dir/"* ]]; then
+				unset 'to_delete[path]'
+			fi
+		done
+		to_delete=("$project_dir" "${to_delete[@]}")
+	fi
+
 	echo
 	echo "${bold}Files of session ${cyan}$session_id${reset}"
 	echo
@@ -310,6 +336,12 @@ delete_session() {
 		# Show the path relative to $claude_dir so it is shorter
 		printf '  %6s  %s\n' "$size" "${path#"$claude_dir"/}"
 	done
+
+	if [[ $delete_project == true ]]; then
+		echo
+		echo "  ${yellow}This is the last session of ${bold}$project_name${reset}${yellow}: the whole project"
+		echo "  directory will be deleted, including memory/ and any other file inside it${reset}"
+	fi
 
 	total=$(du -shc "${to_delete[@]}" | tail -n 1 | cut -f1)
 	echo
@@ -343,6 +375,9 @@ delete_session() {
 	if rm -rf -- "${to_delete[@]}"; then
 		echo
 		echo "${green}${bold}Session $session_id deleted${reset} ${dim}($total freed)${reset}"
+		if [[ $delete_project == true ]]; then
+			echo "${green}${bold}Project $project_name deleted${reset}"
+		fi
 	else
 		error "Some paths could not be deleted"
 	fi

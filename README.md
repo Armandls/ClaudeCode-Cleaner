@@ -51,9 +51,17 @@ deleted.
 | `session-env/<id>/` | Session environment metadata |
 | `debug/<id>*`, `image-cache/<id>/`, `uploads/<id>/`, `tasks/<id>/` | Only present if you used those features |
 
+### Last session of a project
+
+When you delete the last session of a project, the whole project directory
+(`projects/<project>/`) is deleted too, including its `memory/` and any other
+file inside it. The list shown before the confirmation warns you about it.
+
+While a project still has other sessions, its `memory/` is never touched: it is
+shared by all of them.
+
 ## What is never touched
 
-- `projects/<project>/memory/`: the project's memory, shared by all its sessions
 - `history.jsonl`: the global prompt history
 - `sessions/`, `.credentials.json`, `jobs/`, `daemon/` and any other Claude Code state
 - Files that are not named after a session (`paste-cache/`, `shell-snapshots/`,
@@ -66,7 +74,11 @@ Before deleting anything, the script checks that:
 - the session ID is a valid UUID;
 - the session is not running right now (it is not listed in `sessions/*.json`);
 - every path is inside the Claude directory, contains the session ID and is not
-  a `memory` directory.
+  a `memory` directory;
+- the whole project directory is only deleted when it is the last session, and
+  only if it is exactly `projects/<project>`.
+
+The script checks again that the session is not running right before deleting it.
 
 ## Custom Claude directory
 
