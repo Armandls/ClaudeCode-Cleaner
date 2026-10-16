@@ -6,6 +6,9 @@ together with all the data Claude Code keeps for each one.
 Claude Code already removes sessions older than `cleanupPeriodDays` (30 days by
 default). This script is for deleting a specific session **now**, chosen by hand.
 
+> [!NOTE]
+> This is an unofficial tool. It is not affiliated with or endorsed by Anthropic.
+
 ![Choosing a project and a session, reviewing its files and deleting it](demo/demo.gif)
 
 The demo uses fake data. To record it again: `vhs demo/demo.tape`
@@ -98,6 +101,14 @@ mkdir -p /tmp/claude-test
 cp -r ~/.claude/{projects,file-history,session-env,sessions} /tmp/claude-test/
 CLAUDE_CONFIG_DIR=/tmp/claude-test ./ccleaner.sh
 ```
+
+## Compatibility
+
+The layout of the Claude directory (`projects/`, `sessions/`, `file-history/`...)
+is internal to Claude Code and not officially documented, so it may change in a
+future version. If it does, the safety checks make the script more likely to
+miss some files than to delete anything it should not. Use `--dry-run` to check
+what it finds, and open an issue if something looks wrong.
 
 ## License
 
