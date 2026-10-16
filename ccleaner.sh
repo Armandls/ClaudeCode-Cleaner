@@ -81,6 +81,14 @@ shopt -s nullglob
 # the menus set it to 1 to always show one option per line
 shopt -u checkwinsize
 
+#Print the last modification date of the file in $1
+# GNU date and recent macOS accept "date -r <file>"; older macOS only accepts
+# seconds there, so fall back to BSD stat
+file_date() {
+	date -r "$1" '+%Y-%m-%d %H:%M' 2>/dev/null ||
+		stat -f '%Sm' -t '%Y-%m-%d %H:%M' "$1"
+}
+
 # Return success (0) if the session ID in $1 is running right now
 is_active() {
 	local active_files=("$claude_dir"/sessions/*.json)
@@ -116,7 +124,11 @@ session_title() {
 choose_project() {
 	local all_dirs dirs names labels dir sessions count label
 
-	mapfile -t all_dirs < <(find "$claude_dir/projects" -mindepth 1 -maxdepth 1 -type d | sort)
+	# mapfile does not exist in Bash 3.2 (the one macOS ships), so read line by line
+	all_dirs=()
+	while IFS= read -r dir; do
+		all_dirs+=("$dir")
+	done < <(find "$claude_dir/projects" -mindepth 1 -maxdepth 1 -type d | sort)
 
 	# Keep only the projects that still have sessions: a project directory
 	# stays after deleting all its sessions because memory/ is never deleted
@@ -183,13 +195,15 @@ choose_session() {
 		return 1
 	fi
 
-	# One .jsonl file per session, newest first: find prints "<modification time> <path>",
-	# sort orders by that number and cut removes it again
-	mapfile -t session_files < <(
-		find "$project_dir" -mindepth 1 -maxdepth 1 -type f -name '*.jsonl' -printf '%T@ %p\n' |
-			sort -rn |
-			cut -d' ' -f2-
-	)
+	# One .jsonl file per session, newest first. ls -t sorts by modification time
+	# on both Linux and macOS (find -printf only exists in GNU find)
+	session_files=("$project_dir"/*.jsonl)
+	if (( ${#session_files[@]} > 0 )); then
+		session_files=()
+		while IFS= read -r file; do
+			session_files+=("$file")
+		done < <(ls -1t -- "$project_dir"/*.jsonl)
+	fi
 
 	if (( ${#session_files[@]} == 0 )); then
 		echo
@@ -204,7 +218,7 @@ choose_session() {
 		id="${file##*/}"
 		id="${id%.jsonl}"
 
-		modified=$(date -r "$file" '+%Y-%m-%d %H:%M')
+		modified=$(file_date "$file")
 		size=$(du -h "$file" | cut -f1)
 
 		title=$(session_title "$file")

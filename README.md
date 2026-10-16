@@ -13,9 +13,12 @@ The demo uses fake data. To record it again: `vhs demo/demo.tape`
 
 ## Requirements
 
-- Bash 4 or newer
+- Linux or macOS
+- Bash 3.2 or newer (the one macOS ships in `/bin/bash` works)
 - Claude Code installed (`claude` in your `PATH`)
-- GNU coreutils (`date -r`, `du`, `find`)
+
+The script only uses commands that behave the same in GNU coreutils (Linux) and
+in the BSD tools that come with macOS, so nothing else needs to be installed.
 
 ## Installation
 
